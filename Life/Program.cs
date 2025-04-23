@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.IO;
+using System.Text.Json;
+using System.Drawing;
+using System.Formats.Asn1;
 using System.Threading;
 
 namespace cli_life
@@ -30,6 +32,7 @@ namespace cli_life
         public readonly Cell[,] Cells;
         public readonly int CellSize;
 
+        private Dictionary<int, int> count_sleeping;
         public int Columns { get { return Cells.GetLength(0); } }
         public int Rows { get { return Cells.GetLength(1); } }
         public int Width { get { return Columns * CellSize; } }
@@ -37,6 +40,7 @@ namespace cli_life
 
         public Board(int width, int height, int cellSize, double liveDensity = .1)
         {
+            count_sleeping = new Dictionary<int, int>();
             CellSize = cellSize;
 
             Cells = new Cell[width / cellSize, height / cellSize];
@@ -85,23 +89,75 @@ namespace cli_life
                 }
             }
         }
+
     }
+
+    class SettingsParser
+    {
+        public int width { get; set; }
+        public int height { get; set; }
+        public int cellSize { get; set; }
+        public double liveDensity { get; set; }
+    }
+
     class Program
     {
         static Board board;
-        static private void Reset()
+        static int genCount;
+        static private void Reset(string projectDirectory, double dens = 0)
         {
-            board = new Board(
-                width: 50,
-                height: 20,
-                cellSize: 1,
-                liveDensity: 0.5);
+            if (!Directory.Exists("Input")) Directory.CreateDirectory(Path.Combine(projectDirectory, "Input/"));
+            string settingsDirectory = Path.Combine(projectDirectory, "Input/settings.json");
+            if (!File.Exists(settingsDirectory))
+                File.Create(settingsDirectory);
+            string raw = File.ReadAllText(settingsDirectory);
+            if (raw != "")
+            {
+                var settings = JsonSerializer.Deserialize<SettingsParser>(raw);
+                if (dens != 0)
+                {
+                    board = new Board(
+                        width: settings.width,
+                        height: settings.height,
+                        cellSize: settings.cellSize,
+                        liveDensity: dens);
+                }
+                else
+                {
+                    board = new Board(
+                        width: settings.width,
+                        height: settings.height,
+                        cellSize: settings.cellSize,
+                        liveDensity: settings.liveDensity);
+                }
+            }
+            else
+            {
+                var options = new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                };
+                var settings = new SettingsParser
+                {
+                    width = 50,
+                    height = 20,
+                    cellSize = 1,
+                    liveDensity = 0.5,
+                };
+                string jsonString = JsonSerializer.Serialize(settings, options);
+                File.WriteAllText(settingsDirectory, jsonString);
+                board = new Board(
+                    width: settings.width,
+                    height: settings.height,
+                    cellSize: settings.cellSize,
+                    liveDensity: settings.liveDensity);
+            }
         }
         static void Render()
         {
             for (int row = 0; row < board.Rows; row++)
             {
-                for (int col = 0; col < board.Columns; col++)   
+                for (int col = 0; col < board.Columns; col++)
                 {
                     var cell = board.Cells[col, row];
                     if (cell.IsAlive)
@@ -116,16 +172,120 @@ namespace cli_life
                 Console.Write('\n');
             }
         }
-        static void Main(string[] args)
+
+        static int Load(string projectDirectory)
         {
-            Reset();
-            while(true)
+            string loadDirectory = Path.Combine(projectDirectory, "Data/gen-0.txt");
+            if (!Directory.Exists(Path.Combine(projectDirectory, "Data")))
             {
+                Directory.CreateDirectory(Path.Combine(projectDirectory, "Data/"));
+                File.WriteAllText(loadDirectory, "");
+            }
+            else if (!File.Exists(loadDirectory))
+            {
+                File.WriteAllText(loadDirectory, "");
+            }
+
+            string[] raw = File.ReadAllLines(loadDirectory);
+
+            int wid = 0;
+            int hei = 0;
+            int gen = 0;
+            if (raw.Length > 0)
+            {
+                wid = raw[0].Length;
+                hei = raw.Length - 1;
+                gen = int.Parse(raw[hei]);
+            }
+
+            board = new Board(
+                width: wid,
+                height: hei,
+                cellSize: 1,
+                liveDensity: 0);
+
+            for (int row = 0; row < board.Rows; row++)
+            {
+                for (int col = 0; col < board.Columns; col++)
+                {
+                    var cell = board.Cells[col, row];
+                    if (raw[row][col] == '1')
+                    {
+                        cell.IsAlive = true;
+                    }
+                    else
+                    {
+                        cell.IsAlive = false;
+                    }
+                }
+            }
+            return gen;
+        }
+
+        static void Save(string projectDirectory, Dictionary<string, int> c_data = null)
+        {
+            string fname = "gen-" + genCount.ToString();
+            if (!Directory.Exists(Path.Combine(projectDirectory, "Data")))
+                Directory.CreateDirectory(Path.Combine(projectDirectory, "Data/"));
+            StreamWriter writer = new StreamWriter(Path.Combine(projectDirectory, "Data/" + fname + ".txt"));
+            double[,] data = new double[board.Rows, board.Columns];
+            for (int row = 0; row < board.Rows; row++)
+            {
+                for (int col = 0; col < board.Columns; col++)
+                {
+                    var cell = board.Cells[col, row];
+                    if (cell.IsAlive)
+                    {
+                        writer.Write('1');
+                        data[row, col] = 1;
+                    }
+                    else
+                    {
+                        writer.Write('0');
+                        data[row, col] = 0;
+                    }
+                }
+                writer.Write("\n");
+            }
+            writer.Write(genCount);
+            if (c_data != null)
+            {
+                foreach (var entity in c_data)
+                {
+                    writer.WriteLine(entity.Key + " - " + entity.Value);
+                }
+            }
+            writer.Close();
+        }
+
+        static void Main()
+        {
+            string projectDirectory = Directory.GetParent(Environment.CurrentDirectory).Parent.Parent.FullName;
+            Reset(projectDirectory);
+            while (true)
+            {
+                if (Console.KeyAvailable)
+                {
+                    ConsoleKeyInfo name = Console.ReadKey(true);
+                    if (name.KeyChar == 'q')
+                        break;
+                    else if (name.KeyChar == 's')
+                    {
+                        Save(projectDirectory);
+                    }
+                    else if (name.KeyChar == 'l')
+                    {
+                        genCount = Load(projectDirectory);
+                    }
+                }
+
                 Console.Clear();
                 Render();
                 board.Advance();
-                Thread.Sleep(1000);
+                Thread.Sleep(300);
             }
+
+
         }
     }
 }
