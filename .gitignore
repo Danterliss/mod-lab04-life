@@ -5,3 +5,6 @@
 /.vs
 /Life/bin/Debug/netcoreapp8.0
 /Life/obj
+/Life.Test/bin/Debug/net8.0
+/Life.Test/obj/Debug/net8.0
+/Life.Test/obj

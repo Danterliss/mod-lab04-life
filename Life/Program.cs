@@ -54,6 +54,33 @@ namespace cli_life
             Randomize(liveDensity);
         }
 
+        public Board(int width, int height, int cellSize, string[] s)
+        {
+            count_sleeping = new Dictionary<int, int>();
+            CellSize = cellSize;
+
+            Cells = new Cell[width / cellSize, height / cellSize];
+            for (int x = 0; x < Columns; x++)
+                for (int y = 0; y < Rows; y++)
+                    Cells[x, y] = new Cell() { IsAlive = s[y][x] == '1' ? true : false };
+
+            ConnectNeighbors();
+        }
+
+        public Board(Cell[][] cells, int cellSize)
+        {
+            count_sleeping = new Dictionary<int, int>();
+            CellSize = cellSize;
+            Cells = new Cell[cells.Length, cells[0].Length];
+            for (int x = 0; x < Columns; x++)
+                for (int y = 0; y < Rows; y++)
+                    Cells[x, y] = new Cell()
+                    {
+                        IsAlive = cells[x][y].IsAlive
+                    };
+            ConnectNeighbors();
+        }
+
         readonly Random rand = new Random();
         public void Randomize(double liveDensity)
         {
